@@ -1,15 +1,17 @@
-classdef LedGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabProtocol
+classdef LedGammaCheck < edu.washington.riekelab.protocols.RiekeLabProtocol
     
     properties
         led                             % Output LED
         preTime = 500                   % Pulse leading duration (ms)
         stimTime = 750                  % Pulse duration (ms)
         tailTime = 500                  % Pulse trailing duration (ms)
+        calibrationIntensity = 0.1      % Intensity to measure a value to check against (norm. [0-1])
+        acceptableError = 0.05          % Acceptable error from calibration intensity measurement (ratio)
     end
     
     properties (Constant)
-        numSteps = 100                  % Number of steps of intensity to measure
-        zeroOffset = -0.0005            % Starting step intensity value
+        numSteps = 11                   % Number of steps of intensity to measure
+        firstStep = 0.001               % Starting step intensity value
     end
     
     properties (Hidden)
@@ -17,8 +19,9 @@ classdef LedGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabProtoco
         currentStep
         outputs
         measurements
+        predictions
+        failures
         optometer
-        lookupTable
     end
     
     methods
@@ -48,36 +51,30 @@ classdef LedGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabProtoco
                 ylabel(a, 'Power (uW)');
                 set(a, 'Box', 'off', 'TickDir', 'out');
                 handler.userData.axesHandle = a;
-                handler.userData.gammaLineHandle = line(0, 0, 'Parent', a);
             end
             
-            % Create output intensities that grow exponentially from zero offset to 1
-            outs = 1.05.^(1:obj.numSteps)';
+            % Create output intensities that grow exponentially from the first step up to the max intensity (1)
+            outs = 2.^(1:obj.numSteps)';
             outs = (outs - min(outs)) / (max(outs) - min(outs));
-            outs = (outs * (1 - obj.zeroOffset)) + obj.zeroOffset;
+            outs = (outs * (1 - obj.firstStep)) + obj.firstStep;
             obj.outputs = outs;
             
-            obj.currentStep = 1;
-            obj.measurements = zeros(obj.numSteps, 1);
+            % Step 0 will be a baseline measurement.
+            obj.currentStep = 0;
             
-            % Store the current lookup table
+            obj.measurements = zeros(obj.numSteps, 1);
+            obj.failures = [];
+            
             device = obj.rig.getDevice(obj.led);
             if ~isprop(device, 'measurementConversionTarget') ...
                     || ~strcmp(device.measurementConversionTarget, symphonyui.core.Measurement.NORMALIZED) ...
                     || ~isprop(device.cobj, 'LookupTable')
                 error([obj.led ' must use normalized units and have an associated lookup table to use this protocol']);
             end
-            obj.lookupTable = device.cobj.LookupTable;
             
-            % Set a linear lookup table
-            lut = NET.createGeneric('System.Collections.Generic.SortedList', {'System.Decimal', 'System.Decimal'});
-            lut.Add(obj.zeroOffset, obj.zeroOffset);
-            lut.Add(1, 1);
-            device.cobj.LookupTable = lut;
+            device.background = symphonyui.core.Measurement(0, device.background.displayUnits);
             
-            device.background = symphonyui.core.Measurement(obj.zeroOffset, device.background.displayUnits);
-            
-            obj.optometer = edu.washington.riekelab.gamma.OptometerUDT350();
+            obj.optometer = edu.washington.riekelab.gamma.OptometerUDT350(10^0);
         end
         
         function updateGammaTable(obj, handler, epoch)
@@ -106,26 +103,77 @@ classdef LedGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabProtoco
                 return;
             end
             
-            % No gain adjustments were required, we can now record the measured intensity.
-            obj.measurements(obj.currentStep) = (measurement - baseline) * obj.optometer.MICROWATT_PER_MILLIVOLT * obj.optometer.gain;
+            % No gain adjustments are required.
+            intensity = (measurement - baseline) * obj.optometer.MICROWATT_PER_MILLIVOLT * obj.optometer.gain;
             
-            set(handler.userData.gammaLineHandle, 'Xdata', obj.outputs(1:obj.currentStep), 'Ydata', obj.measurements(1:obj.currentStep));
+            if obj.currentStep == 0
+                % Calculate a predicted intensity for each output value.
+                obj.predictions = zeros(obj.numSteps, 1);
+                for i = 1:obj.numSteps
+                    obj.predictions(i) = intensity * obj.outputs(i) / obj.calibrationIntensity;
+                end
+                
+                % Turn down the optometer gain to start verification.
+                obj.optometer.gain = 10^-1;
+                obj.currentStep = obj.currentStep + 1;
+                return;
+            end
+            
+            obj.measurements(obj.currentStep) = intensity;
+            
+            lower = obj.predictions(obj.currentStep) - (obj.predictions(obj.currentStep) * obj.acceptableError);
+            upper = obj.predictions(obj.currentStep) + (obj.predictions(obj.currentStep) * obj.acceptableError);
+            
+            if obj.measurements(obj.currentStep) < lower || obj.measurements(obj.currentStep) > upper
+                obj.failures(end + 1, 1) = obj.outputs(obj.currentStep);
+                obj.failures(end, 2) = obj.measurements(obj.currentStep);
+            end
+            
+            errors = obj.predictions(1:obj.currentStep) * obj.acceptableError;
             
             axesHandle = handler.userData.axesHandle;
-            xlim(axesHandle, [min(obj.outputs(1:obj.currentStep)) - 0.05, max(obj.outputs(1:obj.currentStep)) + 0.05]);
-            ylim(axesHandle, [min(obj.measurements) - 0.05, max(obj.measurements) + 0.05]);
+            t = get(get(axesHandle, 'Title'), 'String');
+            x = get(get(axesHandle, 'XLabel'), 'String');
+            y = get(get(axesHandle, 'YLabel'), 'String');
+            
+            errorbar(obj.outputs(1:obj.currentStep), obj.predictions(1:obj.currentStep), errors, 'Parent', axesHandle, 'LineStyle', 'none', 'Marker', 's', 'Color', 'g');
+            
+            set(axesHandle, ...
+                'FontName', get(handler.getFigureHandle(), 'DefaultUicontrolFontName'), ...
+                'FontSize', get(handler.getFigureHandle(), 'DefaultUicontrolFontSize'));
+            title(axesHandle, t);
+            xlabel(axesHandle, x);
+            ylabel(axesHandle, y);
+            
+            line(obj.outputs(1:obj.currentStep), obj.measurements(1:obj.currentStep), 'Parent', axesHandle, 'LineStyle', 'none', 'Marker', 'o', 'Color', 'b');
+            
+            if isempty(obj.failures)
+                legend(axesHandle, {'Predicted', 'Measured'}, 'Parent', handler.getFigureHandle());
+            else
+                line(obj.failures(:,1), obj.failures(:,2), 'Parent', axesHandle, 'LineStyle', 'none', 'LineWidth', 2, 'Marker', 'x', 'MarkerSize', 12,  'Color', 'r');                
+                legend(axesHandle, {'Predicted', 'Measured', 'Failed'}, 'Parent', handler.getFigureHandle());
+            end
+
+            xlim(axesHandle, [min(obj.outputs(1:obj.currentStep)) - 1e-4, max(obj.outputs(1:obj.currentStep)) + 1e-4]);
+            ylim(axesHandle, [min(obj.measurements) - 0.01, max(obj.measurements) + 0.01]);
             
             obj.currentStep = obj.currentStep + 1;
         end
         
         function stim = createLedStimulus(obj, step)
+            if obj.currentStep == 0
+                output = obj.calibrationIntensity;
+            else
+                output = obj.outputs(step);
+            end
+            
             gen = symphonyui.builtin.stimuli.PulseGenerator();
             
             gen.preTime = obj.preTime;
             gen.stimTime = obj.stimTime;
             gen.tailTime = obj.tailTime;
-            gen.amplitude = obj.outputs(step) - obj.zeroOffset;
-            gen.mean = obj.zeroOffset;
+            gen.amplitude = output;
+            gen.mean = 0;
             gen.sampleRate = obj.sampleRate;
             gen.units = obj.rig.getDevice(obj.led).background.displayUnits;
             
@@ -153,34 +201,6 @@ classdef LedGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabProtoco
         
         function tf = shouldContinueRun(obj)
             tf = obj.currentStep <= obj.numSteps;
-        end
-        
-        function completeRun(obj)
-            completeRun@edu.washington.riekelab.protocols.RiekeLabProtocol(obj);
-            
-            % Restore old lookup table
-            device = obj.rig.getDevice(obj.led);
-            if isprop(device.cobj, 'LookupTable') && ~isempty(obj.lookupTable)
-                obj.rig.getDevice(obj.led).cobj.LookupTable = obj.lookupTable;
-            end
-            
-            if obj.currentStep > obj.numSteps
-                % Save the gamma table
-                
-                % Normalize measurements with span from 0 to 1
-                mrange = max(obj.measurements) - min(obj.measurements);
-                baseline = min(obj.measurements);
-                xRamp = (obj.measurements - baseline) / mrange;
-                yRamp = obj.outputs;
-                
-                ramp = [xRamp, yRamp]; %#ok<NASGU>
-                
-                % Save the ramp to file
-                [filename, pathname] = uiputfile('*.txt', 'Save Gamma Table');
-                if ~isequal(filename, 0) && ~isequal(pathname, 0)
-                    save(fullfile(pathname, filename), 'ramp', '-ascii', '-tabs');
-                end
-            end
         end
         
         function [tf, msg] = isValid(obj)
