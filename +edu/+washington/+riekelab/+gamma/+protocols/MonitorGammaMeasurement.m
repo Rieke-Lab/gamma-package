@@ -170,12 +170,13 @@ classdef MonitorGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabSta
                 ramp = interp1(values, outs, x)';
                 
                 h = figure('Name', 'Gamma Table', 'NumberTitle', 'off');
-                a = axes(h, ...
-                    'FontName', get(h, 'DefaultUicontrolFontName'), ...
-                    'FontSize', get(h, 'DefaultUicontrolFontSize'));
-                title(a, 'Gamma Table');
+                a = axes(h);
                 plot(a, outs, values, '.', values, outs, '.', x, ramp, '--');
                 legend(a, 'Measurements', 'Inverse Measurements', 'Gamma Correction');
+                title(a, 'Gamma Table');
+                set(a, ...
+                    'FontName', get(h, 'DefaultUicontrolFontName'), ...
+                    'FontSize', get(h, 'DefaultUicontrolFontSize'));
                 
                 % Save the ramp and measurements to file.
                 [filename, pathname] = uiputfile('*.txt', 'Save Gamma Table');
