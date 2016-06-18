@@ -1,4 +1,4 @@
-classdef MonitorGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabStageProtocol
+classdef MonitorGammaCheck < edu.washington.riekelab.protocols.RiekeLabStageProtocol
     
     properties
         amp
@@ -8,18 +8,15 @@ classdef MonitorGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabSta
     end
     
     properties
-        numSteps = uint16(256)          % Number of steps of intensity to measure
-        repeatsPerStep = uint16(1)      % Number of measurements to make at each step
+        numSteps = uint16(16)           % Number of steps of intensity to measure
     end
     
     properties (Hidden, Transient)
         ampType
         currentStep
-        currentRepeat
         outputs
         measurements
         optometer
-        gammaRamp
     end
     
     methods
@@ -56,18 +53,7 @@ classdef MonitorGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabSta
             obj.outputs = linspace(0, 1, obj.numSteps);
             
             obj.currentStep = 1;
-            obj.currentRepeat = 1;
             obj.measurements = zeros(1, obj.numSteps);
-            
-            % Store the current gamma ramp.
-            [red, green, blue] = obj.rig.getDevice('Stage').getMonitorGammaRamp();
-            obj.gammaRamp.red = red;
-            obj.gammaRamp.green = green;
-            obj.gammaRamp.blue = blue;
-            
-            % Set a linear gamma ramp.
-            ramp = linspace(0, 65535, 256);
-            obj.rig.getDevice('Stage').setMonitorGammaRamp(ramp, ramp, ramp);
             
             obj.optometer = edu.washington.riekelab.gamma.OptometerUDT350();
         end
@@ -99,21 +85,15 @@ classdef MonitorGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabSta
             end
             
             % No gain adjustments were required, we can now record the measured intensity.
-            obj.measurements(obj.currentStep) = obj.measurements(obj.currentStep) + (measurement - baseline) * obj.optometer.MICROWATT_PER_MILLIVOLT * obj.optometer.gain;
+            obj.measurements(obj.currentStep) = (measurement - baseline) * obj.optometer.MICROWATT_PER_MILLIVOLT * obj.optometer.gain;
             
-            if mod(obj.currentRepeat, obj.repeatsPerStep) == 0
-                obj.measurements(obj.currentStep) = obj.measurements(obj.currentStep) ./ double(obj.repeatsPerStep);
-                set(handler.userData.gammaLineHandle, 'Xdata', obj.outputs(1:obj.currentStep), 'Ydata', obj.measurements(1:obj.currentStep));
-                
-                axesHandle = handler.userData.axesHandle;
-                xlim(axesHandle, [min(obj.outputs(1:obj.currentStep)) - 0.05, max(obj.outputs(1:obj.currentStep)) + 0.05]);
-                ylim(axesHandle, [min(obj.measurements) - 0.05, max(obj.measurements) + 0.05]);
-
-                obj.currentStep = obj.currentStep + 1;
-                obj.currentRepeat = 1;
-            else
-                obj.currentRepeat = obj.currentRepeat + 1;
-            end
+            set(handler.userData.gammaLineHandle, 'Xdata', obj.outputs(1:obj.currentStep), 'Ydata', obj.measurements(1:obj.currentStep));
+            
+            axesHandle = handler.userData.axesHandle;
+            xlim(axesHandle, [min(obj.outputs(1:obj.currentStep)) - 0.05, max(obj.outputs(1:obj.currentStep)) + 0.05]);
+            ylim(axesHandle, [min(obj.measurements) - 0.05, max(obj.measurements) + 0.05]);
+            
+            obj.currentStep = obj.currentStep + 1;
         end
         
         function p = createPresentation(obj)
@@ -154,35 +134,25 @@ classdef MonitorGammaMeasurement < edu.washington.riekelab.protocols.RiekeLabSta
         function completeRun(obj)
             completeRun@edu.washington.riekelab.protocols.RiekeLabStageProtocol(obj);
             
-            % Restore the old gamma ramp.
-            obj.rig.getDevice('Stage').setMonitorGammaRamp(obj.gammaRamp.red, obj.gammaRamp.green, obj.gammaRamp.blue);
             if obj.currentStep > obj.numSteps
-                % Save the gamma table.
-                
                 % Normalize measurements with span from 0 to 1.
                 mrange = max(obj.measurements) - min(obj.measurements);
                 baseline = min(obj.measurements);
+                
                 outs = obj.outputs;
                 values = (obj.measurements - baseline) / mrange;
                 
-                % Fit a gamma ramp.
-                x = ((0:255)/255);
-                ramp = interp1(values, outs, x)';
+                % Create ideal linear gamma vector.
+                linear = linspace(0, 1, 256);
                 
                 h = figure('Name', 'Gamma', 'NumberTitle', 'off');
                 a = axes(h);
-                plot(a, outs, values, '.', values, outs, '.', x, ramp, '--');
-                legend(a, 'Measurements', 'Inverse Measurements', 'Gamma Correction');
+                plot(a, outs, values, '.', ((0:255)/255), linear, '-');
+                legend(a, 'Measurements', 'Ideal');
                 title(a, 'Gamma');
                 set(a, ...
                     'FontName', get(h, 'DefaultUicontrolFontName'), ...
                     'FontSize', get(h, 'DefaultUicontrolFontSize'));
-                
-                % Save the ramp and measurements to file.
-                [filename, pathname] = uiputfile('*.txt', 'Save Gamma Table');
-                if ~isequal(filename, 0) && ~isequal(pathname, 0)
-                    save(fullfile(pathname, filename), 'ramp', '-ascii', '-tabs');
-                end
             end
         end
         
