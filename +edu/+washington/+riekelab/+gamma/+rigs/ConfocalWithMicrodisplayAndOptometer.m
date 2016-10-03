@@ -8,7 +8,7 @@ classdef ConfocalWithMicrodisplayAndOptometer < edu.washington.riekelab.rigs.Con
             
             daq = obj.daqController;
             
-            optometer = UnitConvertingDevice('Optometer', 'V').bindStream(daq.getStream('ANALOG_IN.1'));
+            optometer = UnitConvertingDevice('Optometer', 'V').bindStream(daq.getStream('ai1'));
             obj.addDevice(optometer);  
         end
         
