@@ -1,8 +1,8 @@
-classdef TwoPhotonWithMicrodisplayAndOptometer < edu.washington.riekelab.rigs.TwoPhotonWithMicrodisplay
+classdef ConfocalWithMicrodisplayBelowAndOptometer < edu.washington.riekelab.rigs.ConfocalWithMicrodisplayBelow
     
     methods
         
-        function obj = TwoPhotonWithMicrodisplayAndOptometer()
+        function obj = ConfocalWithMicrodisplayBelowAndOptometer()
             import symphonyui.builtin.devices.*;
             import symphonyui.core.*;
             

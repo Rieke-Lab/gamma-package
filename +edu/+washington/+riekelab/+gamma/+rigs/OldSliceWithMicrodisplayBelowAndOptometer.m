@@ -1,8 +1,8 @@
-classdef ConfocalWithMicrodisplayAndOptometer < edu.washington.riekelab.rigs.ConfocalWithMicrodisplay
+classdef OldSliceWithMicrodisplayBelowAndOptometer < edu.washington.riekelab.rigs.OldSliceWithMicrodisplayBelow
     
     methods
         
-        function obj = ConfocalWithMicrodisplayAndOptometer()
+        function obj = OldSliceWithMicrodisplayBelowAndOptometer()
             import symphonyui.builtin.devices.*;
             import symphonyui.core.*;
             

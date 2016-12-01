@@ -1,8 +1,8 @@
-classdef OldSliceWithMicrodisplayAndOptometer < edu.washington.riekelab.rigs.OldSliceWithMicrodisplay
+classdef TwoPhotonWithMicrodisplayBelowAndOptometer < edu.washington.riekelab.rigs.TwoPhotonWithMicrodisplayBelow
     
     methods
         
-        function obj = OldSliceWithMicrodisplayAndOptometer()
+        function obj = TwoPhotonWithMicrodisplayBelowAndOptometer()
             import symphonyui.builtin.devices.*;
             import symphonyui.core.*;
             

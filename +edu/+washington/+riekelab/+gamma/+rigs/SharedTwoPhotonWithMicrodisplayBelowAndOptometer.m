@@ -1,8 +1,8 @@
-classdef SharedTwoPhotonWithMicrodisplayAndOptometer < edu.washington.riekelab.rigs.SharedTwoPhotonWithMicrodisplay
+classdef SharedTwoPhotonWithMicrodisplayBelowAndOptometer < edu.washington.riekelab.rigs.SharedTwoPhotonWithMicrodisplayBelow
     
     methods
         
-        function obj = SharedTwoPhotonWithMicrodisplayAndOptometer()
+        function obj = SharedTwoPhotonWithMicrodisplayBelowAndOptometer()
             import symphonyui.builtin.devices.*;
             import symphonyui.core.*;
             
